@@ -519,11 +519,11 @@ def evaluar_semaforo(df: pd.DataFrame, supuestos: dict, mes: pd.Period) -> list:
 # Interfaz
 # ──────────────────────────────────────────────────────────────────────────
 
-st.title("📊 Estudio Haberes — Dashboard financiero en tiempo real")
+st.title("📊 Estudio Haberes - Dashboard financiero en tiempo real")
 
 if modo_demo_activo():
     st.warning(
-        "**MODO DEMO** — no se encontraron credenciales de Google Sheets en `st.secrets`. "
+        "**MODO DEMO** - no se encontraron credenciales de Google Sheets en `st.secrets`. "
         "Mostrando datos sintéticos para probar la interfaz. Configurá "
         "`gcp_service_account` y `spreadsheet_id` según SETUP_GOOGLE_CLOUD.md "
         "para conectar la planilla real.",
@@ -564,7 +564,7 @@ meses_disponibles = sorted(df_mov["Fecha"].dt.to_period("M").unique(), reverse=T
 mes_kpi = st.sidebar.selectbox("Mes de referencia para KPIs", meses_disponibles, index=0)
 
 # ── KPIs del mes ───────────────────────────────────────────────────────
-st.header(f"Indicadores — {mes_kpi}")
+st.header(f"Indicadores - {mes_kpi}")
 k = kpis_del_mes(df_mov, mes_kpi)
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("Ingresos de gestión", f"${k['ingresos']:,.0f}")
@@ -573,7 +573,7 @@ c3.metric("Resultado neto", f"${k['resultado']:,.0f}")
 c4.metric("Margen neto", f"{k['margen']:.1%}")
 
 # ── Estado de Resultados en tiempo real ────────────────────────────────
-st.subheader(f"Estado de Resultados — {mes_kpi}")
+st.subheader(f"Estado de Resultados - {mes_kpi}")
 er = calcular_er(df_mov, mes_kpi)
 filas_er = [
     ("Ingresos de gestión", er["ingresos"]),
@@ -619,7 +619,7 @@ if er["no_operativo"]:
     )
 
 # ── ER x Línea de negocio ───────────────────────────────────────────────
-st.subheader(f"Rentabilidad por línea de negocio — {mes_kpi}")
+st.subheader(f"Rentabilidad por línea de negocio - {mes_kpi}")
 df_er_linea = er_por_linea(df_mov, mes_kpi, supuestos)
 df_er_linea_mostrar = df_er_linea.copy()
 df_er_linea_mostrar["Cumple"] = df_er_linea_mostrar["Cumple"].map({True: "✓", False: "✕"})
@@ -648,12 +648,12 @@ st.caption(
     "Los costos se reparten entre líneas según su participación en los ingresos del "
     "mes (mismo criterio que el Excel original). Como acá 'Nómina' es una sola "
     "categoría (no separada en directa/indirecta), este reparto es una aproximación "
-    "algo más gruesa que la del Excel — si en algún momento hace falta más precisión, "
+    "algo más gruesa que la del Excel - si en algún momento hace falta más precisión, "
     "se puede separar esa categoría más adelante."
 )
 
 # ── Punto de equilibrio ─────────────────────────────────────────────────
-st.subheader(f"Punto de equilibrio y margen de seguridad — {mes_kpi}")
+st.subheader(f"Punto de equilibrio y margen de seguridad - {mes_kpi}")
 clientes = load_clientes()
 peq = punto_equilibrio(df_mov, mes_kpi, clientes)
 c1, c2, c3 = st.columns(3)
@@ -701,7 +701,7 @@ st.caption(
 )
 
 # ── Análisis de sensibilidad ────────────────────────────────────────────
-st.subheader(f"Análisis de sensibilidad — {mes_kpi}")
+st.subheader(f"Análisis de sensibilidad - {mes_kpi}")
 matriz = matriz_sensibilidad(df_mov, mes_kpi)
 total_clientes_base = sum(clientes.values()) if clientes else None
 etiquetas_y = []
