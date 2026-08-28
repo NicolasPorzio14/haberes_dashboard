@@ -1,5 +1,5 @@
 """
-Dashboard financiero en tiempo real — Estudio Haberes.
+Dashboard financiero en tiempo real - Estudio Haberes.
 
 Lee el libro diario (hoja "Movimientos") y los parámetros de proyección
 (hojas "Supuestos" y "Obligaciones_Futuras") de una planilla de Google Sheets,
@@ -46,7 +46,7 @@ CATEGORIAS_GASTO = [
 
 # Mapeo de categoría → línea del Estado de Resultados (mismo criterio que la
 # hoja `ER` del Excel original). "Nómina" acá viene como una sola categoría
-# (directa + indirecta combinada) porque así se carga en Movimientos — si más
+# (directa + indirecta combinada) porque así se carga en Movimientos - si más
 # adelante hace falta separarlas, se puede agregar "Nómina directa" /
 # "Nómina indirecta" como categorías nuevas y mapearlas a distintos buckets.
 CATEGORIA_A_LINEA_ER = {
@@ -64,7 +64,7 @@ CATEGORIA_A_LINEA_ER = {
 
 CACHE_TTL_SEGUNDOS = 60
 
-# Paleta y tipografía — pensada para el mundo de un estudio contable (libro
+# Paleta y tipografía - pensada para el mundo de un estudio contable (libro
 # diario, sellos, papel), no una paleta genérica de IA. Los mismos colores se
 # usan tanto en el CSS como en los gráficos de Plotly más abajo.
 INK = "#1F2D4A"        # tinta / texto principal
@@ -75,7 +75,7 @@ ROJO_SELLO = "#B23A48"     # no cumple objetivo
 DORADO_SELLO = "#C08A28"   # acento / advertencia
 GRIS_TEXTO = "#6B6558"     # texto secundario
 
-st.set_page_config(page_title="Estudio Haberes — Dashboard", layout="wide")
+st.set_page_config(page_title="Estudio Haberes - Dashboard", layout="wide")
 
 st.markdown(f"""
 <style>
@@ -91,7 +91,7 @@ h1, h2, h3 {{
     border-bottom: 1px solid #DAD5C7;
     padding-bottom: 0.3rem;
 }}
-/* Números en monoespaciada — como columnas de un libro contable */
+/* Números en monoespaciada - como columnas de un libro contable */
 [data-testid="stMetricValue"] {{
     font-family: 'IBM Plex Mono', monospace;
     color: {INK};
@@ -165,7 +165,7 @@ def _worksheet_to_df(client: gspread.Client, sheet_name: str) -> pd.DataFrame:
     # como lo guarda Sheets internamente, sin pasar por el string mostrado en
     # pantalla. Es necesario porque la planilla usa formato local (coma como
     # separador decimal) y el parser por default de gspread asume formato
-    # inglés (coma = separador de miles) — con FORMATTED_VALUE terminaba
+    # inglés (coma = separador de miles) - con FORMATTED_VALUE terminaba
     # borrando la coma decimal y multiplicando importes por 10/100.
     records = ws.get_all_records(value_render_option=ValueRenderOption.unformatted)
     return pd.DataFrame.from_records(records)
@@ -192,7 +192,7 @@ def load_movimientos() -> pd.DataFrame:
     for col in ("Importe neto", "IVA"):
         df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
     df["Importe total"] = df["Importe neto"] + df["IVA"]
-    # signo: Gasto negativo, Cobro positivo — simplifica sumas de flujo de caja
+    # signo: Gasto negativo, Cobro positivo - simplifica sumas de flujo de caja
     df["Importe firmado"] = df.apply(
         lambda r: r["Importe neto"] if r["Tipo"] == "Cobro" else -r["Importe neto"], axis=1
     )
@@ -223,7 +223,7 @@ def load_obligaciones_futuras() -> pd.DataFrame:
 def load_clientes() -> dict:
     """Cantidad de clientes por línea de negocio (hoja `Clientes`, agregada
     con extend_sheet_clientes.py). No es un dato transaccional, se actualiza
-    cada tanto — se usa para Punto de Equilibrio y Sensibilidad."""
+    cada tanto - se usa para Punto de Equilibrio y Sensibilidad."""
     if modo_demo_activo():
         return {"Liquidación de Sueldos": 48, "Tercerización de Estudios": 9,
                 "Asesoramiento Laboral": 1, "Flujo Sole": 0, "Mandú": 6, "Otro ingreso": 0}
@@ -236,6 +236,38 @@ def load_clientes() -> dict:
         return {}
     df["Cantidad de clientes"] = pd.to_numeric(df["Cantidad de clientes"], errors="coerce").fillna(0)
     return dict(zip(df["Línea de negocio"], df["Cantidad de clientes"]))
+
+
+@st.cache_data(ttl=CACHE_TTL_SEGUNDOS, show_spinner=False)
+def load_calendario() -> pd.DataFrame:
+    """Compromisos de cobro/pago con fecha cierta, todavía no ocurridos
+    (hoja `Calendario_Vencimientos`, agregada con extend_sheet_calendario.py).
+    A diferencia de Movimientos, esto no son hechos consumados - es lo que se
+    sabe que va a pasar, cargado a mano, sin ningún modelo detrás."""
+    cols = ["ID", "Fecha esperada", "Tipo", "Categoría", "Concepto", "Importe", "Estado", "Observación"]
+    if modo_demo_activo():
+        hoy = pd.Timestamp.today().normalize()
+        return pd.DataFrame([
+            {"ID": "demo-1", "Fecha esperada": hoy + pd.Timedelta(days=3), "Tipo": "Cobro",
+             "Categoría": "Liquidación de Sueldos", "Concepto": "Cliente grande - factura pendiente",
+             "Importe": 4500000, "Estado": "Pendiente", "Observación": ""},
+            {"ID": "demo-2", "Fecha esperada": hoy + pd.Timedelta(days=5), "Tipo": "Gasto",
+             "Categoría": "Nómina", "Concepto": "Sueldos del mes", "Importe": 15000000,
+             "Estado": "Pendiente", "Observación": ""},
+            {"ID": "demo-3", "Fecha esperada": hoy + pd.Timedelta(days=12), "Tipo": "Gasto",
+             "Categoría": "Cuotas ARCA", "Concepto": "Vencimiento ARCA", "Importe": 4000000,
+             "Estado": "Pendiente", "Observación": ""},
+        ], columns=cols)
+    client = get_client()
+    try:
+        df = _worksheet_to_df(client, "Calendario_Vencimientos")
+    except gspread.exceptions.WorksheetNotFound:
+        return pd.DataFrame(columns=cols)
+    if df.empty:
+        return pd.DataFrame(columns=cols)
+    df["Fecha esperada"] = df["Fecha esperada"].apply(_parse_fecha_google)
+    df["Importe"] = pd.to_numeric(df["Importe"], errors="coerce").fillna(0)
+    return df.dropna(subset=["Fecha esperada"])
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -282,8 +314,8 @@ def _demo_supuestos() -> dict:
         "Tipo de cambio USD/ARS": "1507",
         "Inflación mensual estimada": "0.019",
         "Objetivo margen neto de gestión": "0.30",
-        "Objetivo caja SAC sin financiación — fecha": "2026-12-01",
-        "Objetivo caja SAC sin financiación — umbral": "0",
+        "Objetivo caja SAC sin financiación - fecha": "2026-12-01",
+        "Objetivo caja SAC sin financiación - umbral": "0",
         "TNA préstamo Banco Galicia": "0.32",
         "Monto préstamo Banco Galicia": "5086000",
         "Plazo préstamo Banco Galicia (meses)": "6",
@@ -344,7 +376,7 @@ LINEAS_DE_NEGOCIO = ["Liquidación de Sueldos", "Tercerización de Estudios", "A
 
 def participacion_por_linea(df: pd.DataFrame, mes: pd.Period) -> dict:
     """% que representa cada línea de negocio sobre el total de ingresos del
-    mes — es la clave de reparto que usa el Excel original para asignar
+    mes - es la clave de reparto que usa el Excel original para asignar
     costos indirectos, impuestos y estructura a cada línea."""
     m = df[(df["Fecha"].dt.to_period("M") == mes) & (df["Tipo"] == "Cobro")]
     total = m["Importe neto"].sum()
@@ -361,7 +393,7 @@ def er_por_linea(df: pd.DataFrame, mes: pd.Period, supuestos: dict) -> pd.DataFr
     gastos de estructura e impuestos según la participación de cada línea
     en los ingresos del mes (mismo criterio que la hoja `ER x Línea` del
     Excel original). Como acá `Nómina` no está separada en directa/indirecta,
-    todo el costo directo se prorratea junto — es una simplificación
+    todo el costo directo se prorratea junto - es una simplificación
     consciente frente al original, que si hace falta se puede afinar más
     adelante separando esa categoría."""
     er = calcular_er(df, mes)
@@ -392,7 +424,7 @@ def punto_equilibrio(df: pd.DataFrame, mes: pd.Period, clientes: dict) -> dict:
     Cuotas ARCA, esta última porque aunque no es gasto contable, sí es una
     salida de caja obligatoria) y cuántos clientes por línea hacen falta
     para cubrirla, usando el precio promedio actual por cliente de cada
-    línea. Requiere la hoja `Clientes` — si está vacía, devuelve solo la
+    línea. Requiere la hoja `Clientes` - si está vacía, devuelve solo la
     parte en pesos (sin la lectura en cantidad de clientes)."""
     m = df[df["Fecha"].dt.to_period("M") == mes]
     er = calcular_er(df, mes)
@@ -431,7 +463,7 @@ def punto_equilibrio(df: pd.DataFrame, mes: pd.Period, clientes: dict) -> dict:
 def sensibilidad_resultado(df: pd.DataFrame, mes: pd.Period, var_clientes: float, var_honorarios: float) -> float:
     """Resultado de gestión mensual (antes de Impuesto a las Ganancias) si la
     cantidad de clientes variara `var_clientes` y el honorario promedio
-    variara `var_honorarios` — replica la fórmula real de la hoja
+    variara `var_honorarios` - replica la fórmula real de la hoja
     `Sensibilidad` del Excel original (leída de las celdas, no adivinada):
 
         Resultado = Ingresos_de_gestión × (1+honorarios) × (1+clientes)
@@ -440,7 +472,7 @@ def sensibilidad_resultado(df: pd.DataFrame, mes: pd.Period, var_clientes: float
 
     Verificado contra las 25 celdas de la tabla original: coincide al
     centavo. Los ingresos de gestión (incluyen Mandú) escalan enteros con
-    ambas variaciones — el 'Ratio facturado' es solo el % que
+    ambas variaciones - el 'Ratio facturado' es solo el % que
     representa la facturación operativa (sin Mandú) sobre el total, usado
     para estimar el efecto de IIBB sin tener que recalcularlo línea por
     línea. Los costos fijos (Nómina + Costos externos + Gastos de
@@ -466,7 +498,7 @@ def sensibilidad_resultado(df: pd.DataFrame, mes: pd.Period, var_clientes: float
 def matriz_sensibilidad(df: pd.DataFrame, mes: pd.Period,
                          pasos=(-0.2, -0.1, 0.0, 0.1, 0.2)) -> pd.DataFrame:
     """Filas = variación en cantidad de clientes (Q), columnas = variación
-    en honorario promedio (P) — igual layout que 'Clientes ↓ / Honorarios →'
+    en honorario promedio (P) - igual layout que 'Clientes ↓ / Honorarios →'
     del Excel original."""
     filas = []
     for vq in pasos:
@@ -486,7 +518,7 @@ def desglose_por_categoria(df: pd.DataFrame, mes: pd.Period, tipo: str) -> pd.Da
 
 def flujo_caja_real(df: pd.DataFrame) -> pd.DataFrame:
     """Evolución de la caja acumulada real, mes a mes, usando solo
-    movimientos efectivamente cargados — sin proyección. Eso queda a cargo
+    movimientos efectivamente cargados - sin proyección. Eso queda a cargo
     del informe mensual de Épsilon, no de este dashboard."""
     if df.empty:
         return pd.DataFrame(columns=["mes", "caja"])
@@ -501,6 +533,41 @@ def flujo_caja_real(df: pd.DataFrame) -> pd.DataFrame:
         caja += k["resultado"]
         filas.append({"mes": m.to_timestamp(), "caja": caja})
     return pd.DataFrame(filas)
+
+
+def calendario_liquidez(df_calendario: pd.DataFrame, caja_actual: float, dias_adelante: int = 90) -> pd.DataFrame:
+    """Calce de liquidez de corto plazo: ordena los compromisos PENDIENTES
+    del calendario (cobros y pagos con fecha cierta, cargados a mano) dentro
+    de la ventana de `dias_adelante` días desde hoy, y va acumulando el saldo
+    de caja a partir de `caja_actual`. No hay ningún modelo ni supuesto acá
+    - es un calce de fechas, no una proyección."""
+    hoy = pd.Timestamp.today().normalize()
+    limite = hoy + pd.Timedelta(days=dias_adelante)
+    pendientes = df_calendario[
+        (df_calendario.get("Estado", "Pendiente") == "Pendiente")
+        & (df_calendario["Fecha esperada"] >= hoy) & (df_calendario["Fecha esperada"] <= limite)
+    ].sort_values("Fecha esperada").copy()
+
+    pendientes["Importe firmado"] = pendientes.apply(
+        lambda r: r["Importe"] if r["Tipo"] == "Cobro" else -r["Importe"], axis=1
+    )
+    pendientes["Saldo proyectado"] = caja_actual + pendientes["Importe firmado"].cumsum()
+    return pendientes
+
+
+def vencidos_pendientes(df_calendario: pd.DataFrame) -> pd.DataFrame:
+    """Compromisos cuya fecha esperada ya pasó pero siguen en 'Pendiente' -
+    señal de que probablemente ya sucedieron y a alguien se le olvidó marcar
+    el Estado como 'Cumplido' (y, si corresponde, cargarlo en Movimientos).
+    Es un recordatorio, no una corrección automática - nadie más que una
+    persona puede confirmar si de verdad pasó o si el vencimiento se corrió."""
+    if df_calendario.empty:
+        return df_calendario
+    hoy = pd.Timestamp.today().normalize()
+    return df_calendario[
+        (df_calendario.get("Estado", "Pendiente") == "Pendiente")
+        & (df_calendario["Fecha esperada"] < hoy)
+    ].sort_values("Fecha esperada")
 
 
 def evaluar_semaforo(df: pd.DataFrame, supuestos: dict, mes: pd.Period) -> list:
@@ -614,7 +681,7 @@ if er["no_operativo"]:
         f"Partidas fuera del resultado de gestión (Cuotas ARCA, Retiros de socios, "
         f"Préstamo): ${er['no_operativo']:,.0f}. Resultado neto de gestión "
         f"(${er['resultado_neto']:,.0f}) menos esas partidas = flujo de caja del mes "
-        f"(${k['resultado']:,.0f}) — son dos números distintos a propósito: uno es "
+        f"(${k['resultado']:,.0f}) - son dos números distintos a propósito: uno es "
         f"contable, el otro es caja."
     )
 
@@ -670,7 +737,7 @@ if not peq["por_linea"].empty:
     )
 else:
     st.info(
-        "No hay datos en la hoja 'Clientes' todavía — corré extend_sheet_clientes.py "
+        "No hay datos en la hoja 'Clientes' todavía - corré extend_sheet_clientes.py "
         "para agregarla y ver el punto de equilibrio en cantidad de clientes por línea."
     )
 
@@ -687,7 +754,7 @@ for o in objetivos:
     )
 
 # ── Flujo de caja acumulado (real) ──────────────────────────────────────
-st.subheader("Flujo de caja acumulado — real")
+st.subheader("Flujo de caja acumulado - real")
 serie_caja = flujo_caja_real(df_mov)
 fig_caja = go.Figure()
 fig_caja.add_trace(go.Scatter(x=serie_caja["mes"], y=serie_caja["caja"], mode="lines+markers",
@@ -699,6 +766,86 @@ st.caption(
     "Evolución de la caja acumulada con datos reales cargados hasta la fecha. La "
     "proyección a futuro queda a cargo del informe mensual de Épsilon."
 )
+
+# ── Calendario de liquidez (corto plazo) ────────────────────────────────
+st.subheader("Calendario de liquidez - próximos 90 días")
+df_calendario = load_calendario()
+
+vencidos = vencidos_pendientes(df_calendario)
+if not vencidos.empty:
+    st.markdown(
+        f'<span class="semaforo-badge semaforo-no">⚠ {len(vencidos)} vencimiento(s) pasado(s) '
+        f'de fecha y todavía en "Pendiente"</span>',
+        unsafe_allow_html=True,
+    )
+    st.dataframe(
+        vencidos[["Fecha esperada", "Tipo", "Categoría", "Concepto", "Importe"]].style.format({
+            "Fecha esperada": lambda d: d.strftime("%d/%m/%Y"), "Importe": "${:,.0f}",
+        }),
+        width="stretch", hide_index=True,
+    )
+    st.caption(
+        "Revisá si esto ya sucedió - si es así, marcalo como 'Cumplido' en "
+        "Calendario_Vencimientos y cargalo en Movimientos si corresponde. Si el vencimiento "
+        "se corrió de fecha, actualizá la fecha esperada."
+    )
+
+caja_actual = serie_caja["caja"].iloc[-1] if not serie_caja.empty else 0.0
+calce = calendario_liquidez(df_calendario, caja_actual, dias_adelante=90)
+
+st.metric("Caja actual (según movimientos cargados)", f"${caja_actual:,.0f}")
+
+if calce.empty:
+    st.info(
+        "No hay compromisos pendientes cargados en 'Calendario_Vencimientos' para los "
+        "próximos 90 días. Corré extend_sheet_calendario.py si todavía no agregaste esa "
+        "hoja, y cargá ahí los vencimientos y cobros esperados con fecha."
+    )
+else:
+    quiebre = calce[calce["Saldo proyectado"] < 0]
+    if not quiebre.empty:
+        primer_quiebre = quiebre.iloc[0]
+        st.markdown(
+            f'<span class="semaforo-badge semaforo-no">⚠ Riesgo de faltante de caja el '
+            f'{primer_quiebre["Fecha esperada"].strftime("%d/%m/%Y")}</span> '
+            f'<span style="font-family:IBM Plex Mono, monospace;">'
+            f'saldo proyectado ${primer_quiebre["Saldo proyectado"]:,.0f}</span>',
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            '<span class="semaforo-badge semaforo-ok">✓ Sin faltantes de caja proyectados '
+            'en los próximos 90 días</span>', unsafe_allow_html=True,
+        )
+
+    fig_calce = go.Figure()
+    colores_calce = [ROJO_SELLO if v < 0 else INK for v in calce["Saldo proyectado"]]
+    fig_calce.add_trace(go.Scatter(
+        x=calce["Fecha esperada"], y=calce["Saldo proyectado"], mode="lines+markers",
+        line=dict(color=INK, width=2), marker=dict(color=colores_calce, size=8),
+    ))
+    fig_calce.add_hline(y=0, line_dash="dash", line_color=ROJO_SELLO)
+    plotly_layout_base(fig_calce, showlegend=False, yaxis_title="Saldo proyectado ($)")
+    st.plotly_chart(fig_calce, width="stretch")
+
+    calce_mostrar = calce[["Fecha esperada", "Tipo", "Categoría", "Concepto", "Importe firmado", "Saldo proyectado"]].copy()
+
+    def _resaltar_negativos(fila):
+        color = f"background-color: {ROJO_SELLO}22" if fila["Saldo proyectado"] < 0 else ""
+        return [color] * len(fila)
+
+    st.dataframe(
+        calce_mostrar.style.apply(_resaltar_negativos, axis=1).format({
+            "Fecha esperada": lambda d: d.strftime("%d/%m/%Y"),
+            "Importe firmado": "${:,.0f}", "Saldo proyectado": "${:,.0f}",
+        }),
+        width="stretch", hide_index=True,
+    )
+    st.caption(
+        "Calce de compromisos con fecha cierta cargados en 'Calendario_Vencimientos', no un "
+        "pronóstico - muestra si el orden en que entran los cobros y salen los pagos deja la "
+        "caja en negativo en algún momento, aunque el resultado del mes sea positivo."
+    )
 
 # ── Análisis de sensibilidad ────────────────────────────────────────────
 st.subheader(f"Análisis de sensibilidad - {mes_kpi}")
@@ -729,7 +876,7 @@ st.plotly_chart(fig_sens, width="stretch")
 st.caption(
     "Resultado de gestión mensual (antes de Impuesto a las Ganancias) estimado según "
     "cómo varíen la cantidad de clientes (Q) y el honorario promedio (P), manteniendo "
-    "fijos los costos operativos — misma lógica y mismos números que la tabla de "
+    "fijos los costos operativos - misma lógica y mismos números que la tabla de "
     "sensibilidad del Excel original."
 )
 
