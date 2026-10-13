@@ -158,6 +158,29 @@ def get_client() -> gspread.Client:
     return gspread.authorize(creds)
 
 
+def mostrar_error_acceso_planilla(ex: Exception) -> None:
+    """Google devuelve 403 (PermissionError) o 404 (SpreadsheetNotFound) al
+    abrir la planilla cuando la cuenta de servicio no tiene acceso. Es un
+    problema de configuración, no de código: se explica cómo resolverlo en
+    lugar de mostrar el traceback."""
+    email = dict(st.secrets["gcp_service_account"]).get("client_email", "(ver client_email en los secrets)")
+    motivo = ("Google rechazó el acceso (403)" if isinstance(ex, PermissionError)
+              else "Google no encontró la planilla (404)")
+    st.error(
+        f"**No se pudo abrir la planilla de Google Sheets**: {motivo}.\n\n"
+        "Revisá, en este orden:\n\n"
+        f"1. Que la planilla esté **compartida** (botón Compartir) con la cuenta de servicio "
+        f"`{email}`, al menos como Lector.\n"
+        "2. Que `spreadsheet_id` en los secrets sea el ID correcto (el tramo de la URL "
+        "entre `/d/` y `/edit`).\n"
+        "3. Que la **Google Sheets API** y la **Google Drive API** estén habilitadas en el "
+        "proyecto de Google Cloud de esa cuenta de servicio.\n"
+        "4. Que la clave de la cuenta de servicio no haya sido borrada o rotada.\n\n"
+        "Después de corregirlo, tocá **🔄 Actualizar ahora**.",
+        icon="🔒",
+    )
+
+
 def _worksheet_to_df(client: gspread.Client, sheet_name: str) -> pd.DataFrame:
     sh = client.open_by_key(st.secrets["spreadsheet_id"])
     ws = sh.worksheet(sheet_name)
@@ -171,7 +194,6 @@ def _worksheet_to_df(client: gspread.Client, sheet_name: str) -> pd.DataFrame:
     return pd.DataFrame.from_records(records)
 
 
-@st.cache_data(ttl=CACHE_TTL_SEGUNDOS, show_spinner="Leyendo Google Sheets…")
 def _parse_fecha_google(valor) -> pd.Timestamp:
     """Soporta tanto fechas que Google Sheets guardó como número de serie
     (epoch de Sheets: días desde 1899-12-30) cuando UNFORMATTED_VALUE trae un
@@ -181,6 +203,7 @@ def _parse_fecha_google(valor) -> pd.Timestamp:
     return pd.to_datetime(valor, dayfirst=True, errors="coerce")
 
 
+@st.cache_data(ttl=CACHE_TTL_SEGUNDOS, show_spinner="Leyendo Google Sheets…")
 def load_movimientos() -> pd.DataFrame:
     if modo_demo_activo():
         return _demo_movimientos()
@@ -602,8 +625,12 @@ if col_refresh.button("🔄 Actualizar ahora"):
     st.cache_data.clear()
     st.rerun()
 
-df_mov = load_movimientos()
-supuestos = load_supuestos()
+try:
+    df_mov = load_movimientos()
+    supuestos = load_supuestos()
+except (PermissionError, gspread.exceptions.SpreadsheetNotFound) as ex:
+    mostrar_error_acceso_planilla(ex)
+    st.stop()
 
 if df_mov.empty:
     st.info("Todavía no hay movimientos cargados en la planilla.")
